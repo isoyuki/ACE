@@ -12,6 +12,8 @@ import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.broadcast.Broadcast;
+import org.monash.core.dao.DataSource;
+import org.monash.core.dao.impl.RedisDataSource;
 import org.monash.core.util.SecureParam;
 import org.monash.crypto.primitives.AsymmetricCipher;
 import org.monash.crypto.primitives.Hash;
@@ -23,11 +25,12 @@ import org.monash.crypto.util.ByteArrayKey;
 import org.monash.crypto.util.ByteNumConverter;
 import org.monash.crypto.util.PairingUtil;
 import org.monash.crypto.util.StringByteConverter;
+import org.monash.util.DataTypeConverter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import scala.Tuple2;
 
-import java.io.Console;
+import java.io.*;
 import java.math.BigInteger;
 import java.security.KeyPair;
 import java.security.NoSuchAlgorithmException;
@@ -36,7 +39,7 @@ import java.util.*;
 public class Generator {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(Generator.class);
-    private static Map<ByteArrayKey, Vector<byte[]>> FSet = new HashMap<>(); // rID1 | gST c 1 ·tagw1 /tagID1 , gSTc 2 ·tagw2 /tagID1
+    private static Map<ByteArrayKey, ArrayList<byte[]>> FSet = new HashMap<>(); // rID1 | gST c 1 ·tagw1 /tagID1 , gSTc 2 ·tagw2 /tagID1
     private static Map<byte[], byte[]> ISet = new HashMap<>();
 
     private static Map<String, Tuple2<byte[], Integer>> W = new HashMap<>(); // key is the keyword, value is the tuple of (ST_c,c)
@@ -193,7 +196,7 @@ public class Generator {
                         ByteArrayKey byteArrayKey = new ByteArrayKey(r);
 
                         if(!FSet.containsKey(byteArrayKey)) {
-                            Vector<byte[]> keywords = new Vector<>();
+                            ArrayList<byte[]> keywords = new ArrayList<>();
                             keywords.add(delta);
                             FSet.put(byteArrayKey, keywords);
                         }else{
@@ -202,11 +205,8 @@ public class Generator {
 
 
                         // --- Verify
-
                         // tk <- g ^ tag_w
-
                         // l <- H(tk^ST, k_h)
-
                         Element tk = broadcastPow.getValue()
                                 .powZn(PairingUtil.getZrElementForHash(tag_w))
                                 .getImmutable();
@@ -214,7 +214,6 @@ public class Generator {
                         byte[] tk_prime = tk.powZn(PairingUtil.getZrElementForHash(ST))
                                 .getImmutable()
                                 .toBytes();
-//
                         byte[] l2 = hmac.encode(tk_prime, SecureParam.K_h);
 
                     }
@@ -225,15 +224,37 @@ public class Generator {
                 });
             });
 
+            DataSource redis = new RedisDataSource();
+            // Redis supports Map<byte[], byte[]> hence FSet needs to be converted
+            Map<byte[], byte[]> FSet_ByteMap = new HashMap<>();
+            for (Map.Entry<ByteArrayKey, ArrayList<byte[]>> entry : FSet.entrySet()) {
+                FSet_ByteMap.put(entry.getKey().getData(), DataTypeConverter.ArrayListToByte(entry.getValue()));
+            }
+
+            redis.mset("FSet".getBytes(),FSet_ByteMap);
+            redis.mset("ISet".getBytes(), ISet);
+
+            // Print out the current FSet and ISet
+
+            System.out.println("FSet: ");
+            redis.hget_all("FSet".getBytes()).forEach((k, v) -> {
+                System.out.println(StringByteConverter.byteToHex(k) + " : ");
+                Objects.requireNonNull(DataTypeConverter.ByteToArrayList(v)).forEach(value ->{
+                    System.out.println(StringByteConverter.byteToHex(value));
+                });
+            });
+
+            System.out.println("ISet: ");
+            redis.hget_all("ISet".getBytes()).forEach((k, v) -> {
+                System.out.println(StringByteConverter.byteToHex(k) + " : " + StringByteConverter.byteToHex(v));
+            });
+
+            redis.close();
+
         } else{
             LOGGER.info("No file path provided");
         }
 
-        // Print W
-
-        for (Map.Entry<String, Tuple2<byte[], Integer>> entry : W.entrySet()) {
-            System.out.println(entry.getKey() + " " + StringByteConverter.byteToHex(entry.getValue()._1) + " " + entry.getValue()._2);
-        }
 
     }
 }

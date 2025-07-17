@@ -1,12 +1,17 @@
 package org.monash.core.dao.impl;
 
 import org.monash.core.dao.DataSource;
+import org.monash.crypto.util.ByteArrayKey;
+import org.monash.crypto.util.StringByteConverter;
+import org.monash.util.DataTypeConverter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -19,7 +24,7 @@ public final class RedisDataSource implements DataSource {
     public RedisDataSource() {
         JedisPoolConfig config = new JedisPoolConfig();
         config.setMaxTotal(128);
-        pool = new JedisPool(config, HOST);
+        pool = new JedisPool(config, HOST, 6379, 10000);
         LOGGER.debug("Connection established");
     }
 
@@ -53,7 +58,7 @@ public final class RedisDataSource implements DataSource {
         }
     }
 
-    @Override
+
     public void mset(byte[] key, Map<byte[], byte[]> valueMap) {
         try (Jedis jedis = pool.getResource()){
             jedis.hmset(key, valueMap);
@@ -64,6 +69,20 @@ public final class RedisDataSource implements DataSource {
     public List<byte[]> mget(byte[] key, byte[]... field) {
         try (Jedis jedis = pool.getResource()){
             return jedis.hmget(key, field);
+        }
+    }
+
+    @Override
+    public byte[] hget(byte[] key, byte[] field) {
+        try (Jedis jedis = pool.getResource()){
+            return jedis.hget(key, field);
+        }
+    }
+
+    @Override
+    public Map<byte[], byte[]> hget_all(byte[] key) {
+        try (Jedis jedis = pool.getResource()){
+            return jedis.hgetAll(key);
         }
     }
 
