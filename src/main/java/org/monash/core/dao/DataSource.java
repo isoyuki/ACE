@@ -1,5 +1,7 @@
 package org.monash.core.dao;
 
+import org.monash.crypto.util.ByteArrayKey;
+
 import java.util.List;
 import java.util.Map;
 
@@ -18,11 +20,15 @@ public interface DataSource {
     List<byte[]> mget(byte[] key, byte[]... field);
 
     long hsetnx(byte[] key, Map<byte[], byte[]> valueMap);
+    long hsetnx_ByteKey(byte[] key, Map<ByteArrayKey, byte[]> valueMap);
 
     byte[] hget(byte[] key, byte[] field);
     Map<byte[], byte[]> hget_all(byte[] key);
 
     boolean isAvailable(String tableName);
+
+    void flushAll();
+
     void close();
 
     long hdel(byte[] bytes, byte[] l);

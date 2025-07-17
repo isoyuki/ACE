@@ -86,6 +86,9 @@ public class Client {
 
         if (args.length > 0){
 
+            // Start timer
+            long startTime = System.currentTimeMillis();
+
             String keyword = args[0];
 
             byte[] tag_w = client.hmac.encode(keyword.getBytes(), SecureParam.K_T);
@@ -94,10 +97,13 @@ public class Client {
                     .powZn(PairingUtil.getZrElementForHash(tag_w))
                     .getImmutable();
 
+            byte[] tk_bytes = tk.toBytes();
+
             query.setTk(tk);
 
             if (W.containsKey(keyword)) {
                 query.setST_c(W.get(keyword)._1);
+                byte[] ST = W.get(keyword)._1;
                 query.setC(W.get(keyword)._2);
             }else{
                 return;
@@ -105,16 +111,21 @@ public class Client {
 
             query.execute();
 
-            System.out.println("Result size: " + query.getResultSize());
+//            System.out.println("Result size: " + query.getResultSize());
 
             byte[] K_w = client.cmac.encode(keyword.getBytes(), SecureParam.K_S);
 
             ArrayList<String> decrypted = client.retrieve(query.getResultList(), K_w);
 
-            System.out.println("IDs with keyword " + keyword);
-            decrypted.forEach(id ->{
-                System.out.println("ID: " + id);
+            // End timer
+            long endTime = System.currentTimeMillis();
+            System.out.println("Time taken: " + (endTime - startTime) + "ms");
+
+            System.out.println(query.getResultSize() + " IDs with keyword " + keyword + ": ");
+            decrypted.forEach(id -> {
+                System.out.print("|" + id);
             });
+            System.out.println();
 
         }
 

@@ -27,11 +27,11 @@ import scala.Tuple2;
 
 import java.io.*;
 import java.util.*;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
-import java.util.stream.StreamSupport;
 
 // Generator acts as Trustee
 
@@ -47,7 +47,7 @@ public class Generator {
     static Broadcast<ElementPow> broadcastPow;
 
     private static final Map<ByteArrayKey, ArrayList<byte[]>> FSet = new HashMap<>(); // rID1 | gST c 1 ·tagw1 /tagID1 , gSTc 2 ·tagw2 /tagID1
-    private static final Map<byte[], byte[]> ISet = new HashMap<>();
+    private static final Map<ByteArrayKey, byte[]> ISet = new HashMap<>();
     private static final Map<String, Tuple2<byte[], Integer>> W = new HashMap<>(); // key is the keyword, value is the tuple of (ST_c,c)
 
     private static final Properties properties = new Properties();
@@ -65,7 +65,7 @@ public class Generator {
 
         conf = new SparkConf().setAppName("Generator");
 
-        conf.setMaster("local[2]");
+        conf.setMaster("local[16]");
 
         // Serialise the element for pre-processing
         conf.set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
@@ -154,127 +154,114 @@ public class Generator {
                     }
                     return list.iterator();
                 })
-                .reduceByKey((v1, v2) -> v1 + "," + v2).cache();
+                .reduceByKey((v1, v2) -> v1 + "," + v2).cache().repartition(16);
 
         LOGGER.debug("Inverted index is generated.");
 
-        invertedIndex.foreachPartition(entries -> {
+        Map<ByteArrayKey, byte[]> tag_ids = new HashMap<>();
 
+        invertedIndex.foreach(entry -> {
             Hash cmac = new AESCMAC();
             Hash hmac = new HMACSHA();
             AsymmetricCipher rsa = new RSA();
             SymmetricCipher aescbc = new AESCBC();
 
-//            // Loop through entires using Stream
-//            StreamSupport.stream(Spliterators.spliteratorUnknownSize(entries, Spliterator.ORDERED), true)
-//                    .forEach(entry -> {
-//
-//                            });
-            entries.forEachRemaining(entry -> { // for each w
+            String keyword = entry._1;
+            String[] ids = entry._2.split(",");
 
-                String keyword = entry._1;
-                String[] ids = entry._2.split(",");
+            System.out.println("Keyword: " + keyword + " has " + ids.length + " ids");
 
-                System.out.println("Keyword: " + keyword + " has " + ids.length + " ids");
+            byte[] tag_w = hmac.encode(keyword.getBytes(), SecureParam.K_T);
+            byte[] k_w = cmac.encode(keyword.getBytes(), SecureParam.K_S);
 
-                byte[] tag_w = hmac.encode(keyword.getBytes(), SecureParam.K_T);
-                byte[] k_w = cmac.encode(keyword.getBytes(), SecureParam.K_S);
+            int c;
+            byte[] ST;
 
-                AtomicInteger c = new AtomicInteger();
-                byte[] ST;
+            if(!W.containsKey(keyword)) {
+                c = 0;
+                ST = rsa.decrypt(SecureParam.sample_array);
+            }else{
+                ST = W.get(keyword)._1;
+                c = W.get(keyword)._2;
+            }
 
-                if(!W.containsKey(keyword)) {
-                    c.set(0);
-                    ST = rsa.decrypt(SecureParam.sample_array);
+            for (String id : ids) { // for IDi ∈ GDB(w) do
+
+                byte[] r = cmac.encode(id.getBytes(), SecureParam.K_1);
+                ByteArrayKey r_id_key = new ByteArrayKey(r);
+
+                byte[] tag_id;
+
+                if(!tag_ids.containsKey(r_id_key)){
+                    tag_id = hmac.encode(id.getBytes(), SecureParam.K_2);
+                    tag_ids.put(r_id_key, tag_id);
                 }else{
-                    ST = W.get(keyword)._1;
-                    c.set(W.get(keyword)._2);
+                    tag_id = tag_ids.get(r_id_key);
                 }
 
-                Stream<String> idsStream = Arrays.stream(ids);
-                byte[] finalST = ST;
-                idsStream.parallel().forEach(id -> {
-                    byte[] r = cmac.encode(id.getBytes(), SecureParam.K_1);
-                    byte[] tag_id;
-                    // if there is no index r_ID in FSet for IDi then
-//                    if (!FSet.containsKey(new ByteArrayKey(r))) {
-//                        tag_id = hmac.encode(id.getBytes(), SecureParam.K_2);
-//                    }
-                    tag_id = hmac.encode(id.getBytes(), SecureParam.K_2);
+                byte[] enc_id  = aescbc.encrypt(id.getBytes(), k_w);
 
-                    byte[] enc_id  = aescbc.encrypt(id.getBytes(), k_w);
+                c++;
 
-                    c.getAndIncrement();
+                ST = rsa.decrypt(ST);
 
-                    byte[] ST_c = rsa.decrypt(finalST);
+                byte[] generator = broadcastPow.getValue()
+                        .powZn(PairingUtil.getZrElementForHash(ST)
+                                .mul(PairingUtil.getZrElementForHash(tag_w)))
+                        .getImmutable()
+                        .toBytes();
 
-                    byte[] generator = broadcastPow.getValue()
-                            .powZn(PairingUtil.getZrElementForHash(ST_c)
-                                    .mul(PairingUtil.getZrElementForHash(tag_w)))
-                            .getImmutable()
-                            .toBytes();
+                byte[] l = hmac.encode(generator, SecureParam.K_h);
+                ByteArrayKey l_key = new ByteArrayKey(l);
 
+                // Append enc_id to ISet[l]
+                if(!ISet.containsKey(l_key)) {
+                    ISet.put(l_key, enc_id);
+                }else{
+                    System.out.println("There is already an entry for l");
+                }
 
-                    byte[] l = hmac.encode(generator, SecureParam.K_h);
+                // delta = g ^ ( (ST-c * tag_w) / (tag_id))
 
-                    System.out.println(StringByteConverter.byteToHex(l));
+                byte[] delta = broadcastPow.getValue()
+                        .powZn(PairingUtil.getZrElementForHash(ST)
+                                .mul(PairingUtil.getZrElementForHash(tag_w))
+                                .div(PairingUtil.getZrElementForHash(tag_id)))
+                        .getImmutable()
+                        .toBytes();
 
-                    // Append enc_id to ISet[l]
-                    if(!ISet.containsKey(l)) {
-                        ISet.put(l, enc_id);
-                    }
+                // Append delta into FSet[r_ID]
+                if(!FSet.containsKey(r_id_key)) {
+                    ArrayList<byte[]> keywords = new ArrayList<>();
+                    keywords.add(delta);
+                    FSet.put(r_id_key, keywords);
 
-                    // delta = g ^ ( (ST-c * tag_w) / (tag_id))
+                }else{
+                    FSet.get(r_id_key).add(delta);
+                }
+            }
 
-                    byte[] delta = broadcastPow.getValue()
-                            .powZn(PairingUtil.getZrElementForHash(ST_c)
-                                    .mul(PairingUtil.getZrElementForHash(tag_w))
-                                    .div(PairingUtil.getZrElementForHash(tag_id)))
-                            .getImmutable()
-                            .toBytes();
-
-                    // Append delta into FSet[r_ID]
-
-                    ByteArrayKey byteArrayKey = new ByteArrayKey(r);
-
-                    if(!FSet.containsKey(byteArrayKey)) {
-                        ArrayList<byte[]> keywords = new ArrayList<>();
-                        keywords.add(delta);
-                        FSet.put(byteArrayKey, keywords);
-                    }else{
-                        FSet.get(byteArrayKey).add(delta);
-                    }
-                });
-
-                // Update W
-                // W[w] = (ST, c)
-
-                // Atomic integer to int
-                int cInt = c.get();
-                W.put(keyword, new Tuple2<>(finalST, cInt));
-            });
+            // Update W
+            // W[w] = (ST, c)
+            W.put(keyword, new Tuple2<>(ST, c));
         });
 
-        // Stop the timer
         long endTime = System.currentTimeMillis();
-
-        // Print the execution time
-//        System.out.println("Execution time: " + (endTime - startTime) + "ms");
-        // In seconds
         System.out.println("Execution time: " + (endTime - startTime) / 1000 + "s");
 
         DataSource redis = new RedisDataSource();
         // Redis supports Map<byte[], byte[]> hence FSet needs to be converted
         Map<byte[], byte[]> FSet_ByteMap = new HashMap<>();
-        for (Map.Entry<ByteArrayKey, ArrayList<byte[]>> entry : FSet.entrySet()) {
+//        for (Map.Entry<ByteArrayKey, ArrayList<byte[]>> entry : FSet.entrySet()) {
+//            FSet_ByteMap.put(entry.getKey().getData(), DataTypeConverter.ArrayListToByte(entry.getValue()));
+//        }
+
+        FSet.entrySet().parallelStream().forEach(entry -> {
             FSet_ByteMap.put(entry.getKey().getData(), DataTypeConverter.ArrayListToByte(entry.getValue()));
-        }
-
-//        redis.hset("FSet".getBytes(),FSet_ByteMap);
-//        redis.hset("ISet".getBytes(), ISet);
-
+        });
         redis.hsetnx("FSet".getBytes(),FSet_ByteMap);
-        redis.hsetnx("ISet".getBytes(), ISet);
+
+        redis.hsetnx_ByteKey("ISet".getBytes(), ISet);
 
         // Save W to file
 
@@ -298,8 +285,8 @@ public class Generator {
             }
         }
 
-        printFSet();
-        printISet();
+//        printFSet();
+//        printISet();
 
         redis.close();
     }
@@ -315,6 +302,7 @@ public class Generator {
 
         // Search in FSet for r
         DataSource redis = new RedisDataSource();
+
         byte[] delta = redis.hget("FSet".getBytes(), r);
 
         if (delta == null) {
@@ -322,18 +310,17 @@ public class Generator {
             return;
         }
 
+        System.out.println("Delete entires for ID: " + id);
+
         // Disassemble delta into ArrayList<byte[]>
         ArrayList<byte[]> deltaList = DataTypeConverter.ByteToArrayList(delta);
-
+        assert deltaList != null;
+        System.out.println("No. keywords associated with this ID: " + deltaList.size());
 
         // Start the timer
         long startTime = System.currentTimeMillis();
 
-        int delCount = 0;
-
-        assert deltaList != null;
-        for(byte[] delta_elements : deltaList){
-
+        deltaList.parallelStream().forEach(delta_elements ->{
             Element deltaElement = PairingUtil.getGTElementFromByte(delta_elements);
 
             byte[] delta_tag_id = deltaElement.powZn(PairingUtil.getZrElementForHash(tag_id))
@@ -346,20 +333,16 @@ public class Generator {
             // Delete the entry in ISet[l]
             if(l != null){
                 redis.hdel("ISet".getBytes(), l);
-                delCount++;
+            } else{
+                System.out.println("l is null");
             }
-        }
+        });
+        // Delete the entry in FSet[r]
+        redis.hdel("FSet".getBytes(), r);
 
-        // Stop the timer
         long endTime = System.currentTimeMillis();
         // Print the execution time
         System.out.println("Execution time: " + (endTime - startTime) + "ms");
-
-        System.out.println(delCount + " entries deleted");
-
-        // Delete the entry in FSet[r]
-
-        redis.hdel("FSet".getBytes(), r);
 
         redis.close();
     }
@@ -371,10 +354,17 @@ public class Generator {
         // Get the current FSet
         Map<byte[], byte[]> FSet_redis = redis.hget_all("FSet".getBytes());
 
+//        // Disassemble FSet into HashMap<ByteArrayKey, ArrayList<byte[]>>
+//        FSet_redis.forEach((k, v) -> {
+//            FSet.putIfAbsent(new ByteArrayKey(k), DataTypeConverter.ByteToArrayList(v));
+//        });
+
         // Disassemble FSet into HashMap<ByteArrayKey, ArrayList<byte[]>>
-        FSet_redis.forEach((k, v) -> {
+        FSet_redis.entrySet().parallelStream().forEach((entry -> {
+            byte[] k = entry.getKey();
+            byte[] v = entry.getValue();
             FSet.putIfAbsent(new ByteArrayKey(k), DataTypeConverter.ByteToArrayList(v));
-        });
+        }));
 
         redis.close();
     }
@@ -384,7 +374,14 @@ public class Generator {
         DataSource redis = new RedisDataSource();
         // Get the current ISet
         Map<byte[], byte[]> ISet_redis = redis.hget_all("ISet".getBytes());
-        ISet_redis.forEach(ISet::putIfAbsent);
+//        ISet_redis.forEach(ISet::putIfAbsent);
+
+        ISet_redis.entrySet().parallelStream().forEach((entry -> {
+            byte[] k = entry.getKey();
+            byte[] v = entry.getValue();
+            ISet.putIfAbsent(new ByteArrayKey(k), v);
+        }));
+
         redis.close();
     }
 

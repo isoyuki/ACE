@@ -9,11 +9,13 @@ import org.slf4j.LoggerFactory;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
+import redis.clients.jedis.Transaction;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 public final class RedisDataSource implements DataSource {
 
@@ -24,7 +26,7 @@ public final class RedisDataSource implements DataSource {
     public RedisDataSource() {
         JedisPoolConfig config = new JedisPoolConfig();
         config.setMaxTotal(128);
-        pool = new JedisPool(config, HOST, 6379, 10000);
+        pool = new JedisPool(config, HOST, 6379, 0);
         LOGGER.debug("Connection established");
     }
 
@@ -75,13 +77,31 @@ public final class RedisDataSource implements DataSource {
     public long hsetnx(byte[] key, Map<byte[], byte[]> valueMap) {
         try (Jedis jedis = pool.getResource()) {
 
+            Transaction transaction = jedis.multi();
             for (Map.Entry<byte[], byte[]> entry : valueMap.entrySet()) {
                 byte[] field = entry.getKey();
                 byte[] value = entry.getValue();
-                jedis.hsetnx(key, field, value);
+                transaction.hsetnx(key, field, value);
             }
+            transaction.exec();
+
+            return 1;
         }
-        return 0;
+    }
+
+    public long hsetnx_ByteKey(byte[] key, Map<ByteArrayKey, byte[]> valueMap) {
+        try (Jedis jedis = pool.getResource()) {
+
+            Transaction transaction = jedis.multi();
+            for (Map.Entry<ByteArrayKey, byte[]> entry : valueMap.entrySet()) {
+                byte[] field = entry.getKey().getData();
+                byte[] value = entry.getValue();
+                transaction.hsetnx(key, field, value);
+            }
+            transaction.exec();
+
+            return 1;
+        }
     }
 
     @Override
@@ -102,6 +122,13 @@ public final class RedisDataSource implements DataSource {
     public long hdel(byte[] key, byte[] field) {
         try (Jedis jedis = pool.getResource()){
             return jedis.hdel(key, field);
+        }
+    }
+
+    @Override
+    public void flushAll() {
+        try (Jedis jedis = pool.getResource()){
+            jedis.flushAll();
         }
     }
 

@@ -16,12 +16,12 @@ public class TestGenerator {
 
         AsymmetricCipher rsa = new RSA();
 
-        byte[] encrypted = rsa.encrypt(content, password);
-        byte[] decrypted = rsa.decrypt(encrypted, password);
+        byte[] encrypted = rsa.encrypt(content);
+        byte[] decrypted = rsa.decrypt(encrypted);
 
         AsymmetricCipher rsa2 = new RSA();
 
-        byte[] decrypted2 = rsa2.decrypt(encrypted, password);
+        byte[] decrypted2 = rsa2.decrypt(encrypted);
 
         assert Arrays.equals(content, decrypted);
         assert Arrays.equals(content, decrypted2);
