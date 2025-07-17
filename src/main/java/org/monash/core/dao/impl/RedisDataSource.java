@@ -99,9 +99,9 @@ public final class RedisDataSource implements DataSource {
     }
 
     @Override
-    public void hdel(byte[] key, byte[] field) {
+    public long hdel(byte[] key, byte[] field) {
         try (Jedis jedis = pool.getResource()){
-            jedis.hdel(key, field);
+            return jedis.hdel(key, field);
         }
     }
 
