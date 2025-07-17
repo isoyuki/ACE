@@ -167,11 +167,6 @@ public class Generator {
 
                     byte[] enc_id  = aescbc.encrypt(id.getBytes(), k_w);
 
-                    System.out.println("id: " + id + "bytes: " + Arrays.toString(id.getBytes()));
-                    System.out.println("enc_id: " + Arrays.toString(enc_id));
-                    byte[] dec_id = aescbc.decrypt(enc_id, k_w);
-                    System.out.println("dec_id: " + Arrays.toString(dec_id));
-
                     c++;
 
                     ST = rsa.decrypt(ST);
@@ -210,21 +205,6 @@ public class Generator {
                     }else{
                         FSet.get(byteArrayKey).add(delta);
                     }
-
-                    System.out.println(StringByteConverter.byteToHex(tag_w));
-
-                    // --- Verify
-                    // tk <- g ^ tag_w
-                    // l <- H(tk^ST, k_h)
-                    Element tk = broadcastPow.getValue()
-                            .powZn(PairingUtil.getZrElementForHash(tag_w))
-                            .getImmutable();
-
-                    byte[] tk_prime = tk.powZn(PairingUtil.getZrElementForHash(ST))
-                            .getImmutable()
-                            .toBytes();
-                    byte[] l2 = hmac.encode(tk_prime, SecureParam.K_h);
-
                 }
 
                 // Update W
@@ -253,7 +233,6 @@ public class Generator {
 
         try{
             writer = new BufferedWriter(new FileWriter(keywords_file));
-//            new FileWriter(keywords_file, false).close();
             for (Map.Entry<String, Tuple2<byte[], Integer>> entry : W.entrySet()) {
                 writer.write(entry.getKey() + "," + StringByteConverter.byteToHex(entry.getValue()._1) + "," + entry.getValue()._2);
                 writer.newLine();
@@ -269,19 +248,8 @@ public class Generator {
             }
         }
 
-        // Print out the current FSet and ISet
-        System.out.println("FSet: ");
-        redis.hget_all("FSet".getBytes()).forEach((k, v) -> {
-            System.out.println(StringByteConverter.byteToHex(k) + " : ");
-            Objects.requireNonNull(DataTypeConverter.ByteToArrayList(v)).forEach(value ->{
-                System.out.println(StringByteConverter.byteToHex(value));
-            });
-        });
-
-        System.out.println("ISet: ");
-        redis.hget_all("ISet".getBytes()).forEach((k, v) -> {
-            System.out.println(StringByteConverter.byteToHex(k) + " : " + StringByteConverter.byteToHex(v));
-        });
+//        printFSet();
+//        printISet();
 
         redis.close();
     }
@@ -346,8 +314,28 @@ public class Generator {
         ISet_redis.forEach(ISet::putIfAbsent);
     }
 
-    public static void updateW(){
+    public static void printFSet(){
 
+        DataSource redis = new RedisDataSource();
+
+        System.out.println("FSet: ");
+        redis.hget_all("FSet".getBytes()).forEach((k, v) -> {
+            System.out.println(StringByteConverter.byteToHex(k) + " : ");
+            Objects.requireNonNull(DataTypeConverter.ByteToArrayList(v)).forEach(value ->{
+                System.out.println(StringByteConverter.byteToHex(value));
+            });
+        });
+
+    }
+
+    public static void printISet(){
+
+        DataSource redis = new RedisDataSource();
+
+        System.out.println("ISet: ");
+        redis.hget_all("ISet".getBytes()).forEach((k, v) -> {
+            System.out.println(StringByteConverter.byteToHex(k) + " : " + StringByteConverter.byteToHex(v));
+        });
 
     }
 }
