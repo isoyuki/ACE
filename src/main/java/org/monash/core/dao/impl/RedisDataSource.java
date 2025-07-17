@@ -87,6 +87,13 @@ public final class RedisDataSource implements DataSource {
     }
 
     @Override
+    public void hdel(byte[] key, byte[] field) {
+        try (Jedis jedis = pool.getResource()){
+            jedis.hdel(key, field);
+        }
+    }
+
+    @Override
     public boolean isAvailable(String tableName) {
         // Table is not available in Redis
         return false;
