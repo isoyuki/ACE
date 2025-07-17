@@ -117,13 +117,6 @@ public class RSA implements AsymmetricCipher {
     @Override
     public byte[] encrypt(byte[] content) {
         try{
-//            KeyPairGenerator keyGen = KeyPairGenerator.getInstance(ALGORITHM);
-//            SecureRandom random = SecureRandom.getInstance("SHA1PRNG");
-//            keyGen.initialize(KEY_SIZE, random);
-//            KeyPair sk = keyGen.generateKeyPair();
-//            Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
-//            cipher.init(Cipher.ENCRYPT_MODE, sk.getPrivate());
-//            return cipher.doFinal(content);
 
             AsymmetricCipherKeyPair keyPair = GenerateKeys();
             Security.addProvider(new BouncyCastleProvider());
@@ -143,18 +136,16 @@ public class RSA implements AsymmetricCipher {
     @Override
     public byte[] decrypt(byte[] content) {
         try{
-            KeyPairGenerator keyGen = KeyPairGenerator.getInstance(ALGORITHM);
-            SecureRandom random = SecureRandom.getInstance("SHA1PRNG");
-            keyGen.initialize(KEY_SIZE, random);
-            KeyPair sk = keyGen.generateKeyPair();
-            Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
-            cipher.init(Cipher.DECRYPT_MODE, sk.getPublic());
-            return cipher.doFinal(content);
-        } catch (BadPaddingException
-                 | IllegalBlockSizeException
-                 | InvalidKeyException
-                 | NoSuchAlgorithmException
-                 | NoSuchPaddingException e) {
+
+            AsymmetricCipherKeyPair keyPair = GenerateKeys();
+            Security.addProvider(new BouncyCastleProvider());
+
+            RSAEngine engine = new RSAEngine();
+            engine.init(false, keyPair.getPrivate()); //true if encrypt
+
+            return engine.processBlock(content, 0, content.length);
+
+        } catch (NoSuchAlgorithmException e) {
             throw new RuntimeException(e);
         }
     }

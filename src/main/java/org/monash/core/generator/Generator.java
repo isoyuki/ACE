@@ -28,6 +28,8 @@ import scala.Tuple2;
 import java.io.*;
 import java.util.*;
 
+// Generator acts as Trustee
+
 public class Generator {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(Generator.class);
@@ -147,7 +149,7 @@ public class Generator {
 
                 if(!W.containsKey(keyword)) {
                     c = 0;
-                    ST = rsa.encrypt(SecureParam.sample_array);
+                    ST = rsa.decrypt(SecureParam.sample_array);
                 }else{
                     ST = W.get(keyword)._1;
                     c = W.get(keyword)._2;
@@ -165,9 +167,11 @@ public class Generator {
 
                     byte[] enc_id  = aescbc.encrypt(id.getBytes(), k_w);
 
+                    System.out.println("enc_id: " + StringByteConverter.byteToHex(enc_id));
+
                     c++;
 
-                    ST = rsa.encrypt(ST);
+                    ST = rsa.decrypt(ST);
 
                     byte[] generator = broadcastPow.getValue()
                             .powZn(PairingUtil.getZrElementForHash(ST)
@@ -204,6 +208,7 @@ public class Generator {
                         FSet.get(byteArrayKey).add(delta);
                     }
 
+                    System.out.println(StringByteConverter.byteToHex(tag_w));
 
                     // --- Verify
                     // tk <- g ^ tag_w
@@ -240,12 +245,12 @@ public class Generator {
 
         // Save W to file
 
-        File keywords_file = new File(buildDir + properties.getProperty("keywords_file"));
+        File keywords_file = new File(properties.getProperty("keywords_file"));
         BufferedWriter writer = null;
 
         try{
             writer = new BufferedWriter(new FileWriter(keywords_file));
-            new FileWriter(keywords_file, false).close();
+//            new FileWriter(keywords_file, false).close();
             for (Map.Entry<String, Tuple2<byte[], Integer>> entry : W.entrySet()) {
                 writer.write(entry.getKey() + "," + StringByteConverter.byteToHex(entry.getValue()._1) + "," + entry.getValue()._2);
                 writer.newLine();
@@ -337,25 +342,6 @@ public class Generator {
 
     public static void updateW(){
 
-            File keywords_file = new File(properties.getProperty("keywords_file"));
-            BufferedReader reader = null;
 
-            try{
-                reader = new BufferedReader(new FileReader(keywords_file));
-                String line;
-                while((line = reader.readLine()) != null){
-                    String[] line_split = line.split(",");
-                    W.put(line_split[0], new Tuple2<>(StringByteConverter.hexToByte(line_split[1]), Integer.parseInt(line_split[2])));
-                }
-            } catch (IOException e) {
-                e.printStackTrace();
-            } finally {
-                try {
-                    assert reader != null;
-                    reader.close();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
     }
 }
