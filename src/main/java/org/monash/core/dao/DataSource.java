@@ -25,5 +25,5 @@ public interface DataSource {
     boolean isAvailable(String tableName);
     void close();
 
-    void hdel(byte[] bytes, byte[] l);
+    long hdel(byte[] bytes, byte[] l);
 }
