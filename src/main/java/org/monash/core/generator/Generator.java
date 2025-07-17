@@ -21,14 +21,17 @@ import org.monash.crypto.util.ByteArrayKey;
 import org.monash.crypto.util.PairingUtil;
 import org.monash.crypto.util.StringByteConverter;
 import org.monash.util.DataTypeConverter;
-import org.openjdk.jol.info.ClassLayout;
-import org.openjdk.jol.vm.VM;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import scala.Tuple2;
 
 import java.io.*;
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 // Generator acts as Trustee
 
@@ -120,6 +123,11 @@ public class Generator {
                     LOGGER.error("Failed to delete existing keywords file");
                 };
             }
+
+            DataSource redis = new RedisDataSource();
+            redis.flushAll();
+            redis.close();
+
         } else{
             updateW();
         }
@@ -127,7 +135,6 @@ public class Generator {
         // Redis is going to overwrite the existing data
         updateFSet();
         updateISet();
-
 
         // Time the execution
         long startTime = System.currentTimeMillis();
@@ -147,7 +154,7 @@ public class Generator {
                     }
                     return list.iterator();
                 })
-                .reduceByKey((v1, v2) -> v1 + "," + v2);
+                .reduceByKey((v1, v2) -> v1 + "," + v2).cache();
 
         LOGGER.debug("Inverted index is generated.");
 
@@ -158,6 +165,11 @@ public class Generator {
             AsymmetricCipher rsa = new RSA();
             SymmetricCipher aescbc = new AESCBC();
 
+//            // Loop through entires using Stream
+//            StreamSupport.stream(Spliterators.spliteratorUnknownSize(entries, Spliterator.ORDERED), true)
+//                    .forEach(entry -> {
+//
+//                            });
             entries.forEachRemaining(entry -> { // for each w
 
                 String keyword = entry._1;
@@ -168,41 +180,44 @@ public class Generator {
                 byte[] tag_w = hmac.encode(keyword.getBytes(), SecureParam.K_T);
                 byte[] k_w = cmac.encode(keyword.getBytes(), SecureParam.K_S);
 
-                int c;
+                AtomicInteger c = new AtomicInteger();
                 byte[] ST;
 
                 if(!W.containsKey(keyword)) {
-                    c = 0;
+                    c.set(0);
                     ST = rsa.decrypt(SecureParam.sample_array);
                 }else{
                     ST = W.get(keyword)._1;
-                    c = W.get(keyword)._2;
+                    c.set(W.get(keyword)._2);
                 }
 
-                for (String id : ids) { // for IDi ∈ GDB(w) do
-
+                Stream<String> idsStream = Arrays.stream(ids);
+                byte[] finalST = ST;
+                idsStream.parallel().forEach(id -> {
                     byte[] r = cmac.encode(id.getBytes(), SecureParam.K_1);
                     byte[] tag_id;
                     // if there is no index r_ID in FSet for IDi then
-                    if (!FSet.containsKey(r)) {
-                        tag_id = hmac.encode(id.getBytes(), SecureParam.K_2);
-                    }
+//                    if (!FSet.containsKey(new ByteArrayKey(r))) {
+//                        tag_id = hmac.encode(id.getBytes(), SecureParam.K_2);
+//                    }
                     tag_id = hmac.encode(id.getBytes(), SecureParam.K_2);
 
                     byte[] enc_id  = aescbc.encrypt(id.getBytes(), k_w);
 
-                    c++;
+                    c.getAndIncrement();
 
-                    ST = rsa.decrypt(ST);
+                    byte[] ST_c = rsa.decrypt(finalST);
 
                     byte[] generator = broadcastPow.getValue()
-                            .powZn(PairingUtil.getZrElementForHash(ST)
+                            .powZn(PairingUtil.getZrElementForHash(ST_c)
                                     .mul(PairingUtil.getZrElementForHash(tag_w)))
                             .getImmutable()
                             .toBytes();
 
 
                     byte[] l = hmac.encode(generator, SecureParam.K_h);
+
+                    System.out.println(StringByteConverter.byteToHex(l));
 
                     // Append enc_id to ISet[l]
                     if(!ISet.containsKey(l)) {
@@ -212,7 +227,7 @@ public class Generator {
                     // delta = g ^ ( (ST-c * tag_w) / (tag_id))
 
                     byte[] delta = broadcastPow.getValue()
-                            .powZn(PairingUtil.getZrElementForHash(ST)
+                            .powZn(PairingUtil.getZrElementForHash(ST_c)
                                     .mul(PairingUtil.getZrElementForHash(tag_w))
                                     .div(PairingUtil.getZrElementForHash(tag_id)))
                             .getImmutable()
@@ -229,11 +244,14 @@ public class Generator {
                     }else{
                         FSet.get(byteArrayKey).add(delta);
                     }
-                }
+                });
 
                 // Update W
                 // W[w] = (ST, c)
-                W.put(keyword, new Tuple2<>(ST, c));
+
+                // Atomic integer to int
+                int cInt = c.get();
+                W.put(keyword, new Tuple2<>(finalST, cInt));
             });
         });
 
@@ -280,8 +298,8 @@ public class Generator {
             }
         }
 
-//        printFSet();
-//        printISet();
+        printFSet();
+        printISet();
 
         redis.close();
     }
@@ -294,10 +312,6 @@ public class Generator {
 
         byte[] tag_id = hmac.encode(id.getBytes(), SecureParam.K_2);
         byte[] r = cmac.encode(id.getBytes(), SecureParam.K_1);
-
-        System.out.println(VM.current().details());
-        System.out.println("tag_id info: " + ClassLayout.parseInstance(tag_id).toPrintable());
-        System.out.println("r info: " + ClassLayout.parseInstance(r).toPrintable());
 
         // Search in FSet for r
         DataSource redis = new RedisDataSource();
@@ -346,6 +360,8 @@ public class Generator {
         // Delete the entry in FSet[r]
 
         redis.hdel("FSet".getBytes(), r);
+
+        redis.close();
     }
 
     public static void updateFSet(){
@@ -359,6 +375,8 @@ public class Generator {
         FSet_redis.forEach((k, v) -> {
             FSet.putIfAbsent(new ByteArrayKey(k), DataTypeConverter.ByteToArrayList(v));
         });
+
+        redis.close();
     }
 
     public static void updateISet(){
@@ -367,6 +385,7 @@ public class Generator {
         // Get the current ISet
         Map<byte[], byte[]> ISet_redis = redis.hget_all("ISet".getBytes());
         ISet_redis.forEach(ISet::putIfAbsent);
+        redis.close();
     }
 
     public static void updateW(){
@@ -405,6 +424,8 @@ public class Generator {
             });
         });
 
+        redis.close();
+
     }
 
     public static void printISet(){
@@ -415,6 +436,8 @@ public class Generator {
         redis.hget_all("ISet".getBytes()).forEach((k, v) -> {
             System.out.println(StringByteConverter.byteToHex(k) + " : " + StringByteConverter.byteToHex(v));
         });
+
+        redis.close();
 
     }
 }
