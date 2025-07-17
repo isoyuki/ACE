@@ -167,7 +167,10 @@ public class Generator {
 
                     byte[] enc_id  = aescbc.encrypt(id.getBytes(), k_w);
 
-                    System.out.println("enc_id: " + StringByteConverter.byteToHex(enc_id));
+                    System.out.println("id: " + id + "bytes: " + Arrays.toString(id.getBytes()));
+                    System.out.println("enc_id: " + Arrays.toString(enc_id));
+                    byte[] dec_id = aescbc.decrypt(enc_id, k_w);
+                    System.out.println("dec_id: " + Arrays.toString(dec_id));
 
                     c++;
 
@@ -317,6 +320,9 @@ public class Generator {
             }
         }
 
+        // Delete the entry in FSet[r]
+
+        redis.hdel("FSet".getBytes(), r);
     }
 
     public static void updateFSet(){

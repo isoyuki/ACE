@@ -6,6 +6,8 @@ import it.unisa.dia.gas.jpbc.ElementPow;
 import org.monash.core.server.query.impl.Search;
 import org.monash.core.util.SecureParam;
 import org.monash.crypto.primitives.Hash;
+import org.monash.crypto.primitives.SymmetricCipher;
+import org.monash.crypto.primitives.impl.cipher.AESCBC;
 import org.monash.crypto.primitives.impl.mac.HMACSHA;
 import org.monash.crypto.util.PairingUtil;
 import org.monash.crypto.util.StringByteConverter;
@@ -14,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import scala.Tuple2;
 
 import java.io.*;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -66,6 +69,17 @@ public class Client {
         }
     }
 
+    // Act as vetter
+    public ArrayList<String> retrieve(ArrayList<byte[]> enc_ids, byte[] K_w){
+        SymmetricCipher aescbc = new AESCBC();
+        ArrayList<String> IDSet = new ArrayList<>();
+        enc_ids.forEach(id -> {
+            byte[] dec_id = aescbc.decrypt(id, K_w);
+            IDSet.add(new String(dec_id));
+        });
+        return IDSet;
+    }
+
     public static void main(String[] args){
         Client client = new Client();
         Search query = new Search();
@@ -76,19 +90,13 @@ public class Client {
 
             byte[] tag_w = client.hmac.encode(keyword.getBytes(), SecureParam.K_T);
 
-            System.out.println("tag_w: " + StringByteConverter.byteToHex(tag_w));
-
             Element tk = client.preG
                     .powZn(PairingUtil.getZrElementForHash(tag_w))
                     .getImmutable();
 
             query.setTk(tk);
 
-            // Print W
             if (W.containsKey(keyword)) {
-
-                System.out.println("Keyword found in W");
-
                 query.setST_c(W.get(keyword)._1);
                 query.setC(W.get(keyword)._2);
             }else{
@@ -97,9 +105,21 @@ public class Client {
 
             query.execute();
 
+            System.out.println("Result size: " + query.getResultSize());
+
+            byte[] K_w = client.cmac.encode(keyword.getBytes(), SecureParam.K_S);
+
+            ArrayList<String> decrypted = client.retrieve(query.getResultList(), K_w);
+
+            System.out.println("IDs with keyword " + keyword);
+            decrypted.forEach(id ->{
+                System.out.println("ID: " + id);
+            });
+
         }
 
     }
+
 
 
 }

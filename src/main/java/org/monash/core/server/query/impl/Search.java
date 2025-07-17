@@ -3,6 +3,7 @@ package org.monash.core.server.query.impl;
 import it.unisa.dia.gas.jpbc.Element;
 import it.unisa.dia.gas.jpbc.ElementPow;
 import org.apache.spark.broadcast.Broadcast;
+import org.bouncycastle.jcajce.provider.asymmetric.dh.IESCipher;
 import org.monash.core.dao.DataSource;
 import org.monash.core.dao.impl.RedisDataSource;
 import org.monash.core.server.query.Query;
@@ -46,8 +47,7 @@ public class Search implements Query {
     @Override
     public void execute() {
 
-        System.out.println("Search");
-
+        LOGGER.debug("Start Search");
         // Check if tk, ST_c, c are defined
 
         if (tk == null || ST_c == null || c == 0) {
@@ -72,31 +72,26 @@ public class Search implements Query {
 
 
                 // Find in ISet
-
                 byte[] enc_id = redis.hget("ISet".getBytes(), l);
 
                 if (enc_id != null){
+                    LOGGER.debug("Found in ISet: " + StringByteConverter.byteToHex(enc_id));
                     RSet.add(enc_id);
-
-                    System.out.println("enc_id: " + StringByteConverter.byteToHex(enc_id));
-
                 }
 
                 ST_c = RSA.encrypt(ST_c);
             }
-
         }
-
     }
 
     @Override
     public int getResultSize() {
-        return 0;
+        return RSet.size();
     }
 
     @Override
-    public List<byte[]> getResultList() {
-        return null;
+    public ArrayList<byte[]> getResultList() {
+        return RSet;
     }
 
     public void setTk(Element tk){

@@ -5,5 +5,5 @@ import java.util.List;
 public interface Query {
     void execute();
     int getResultSize();
-    List<byte[]> getResultList();
+    List<?> getResultList();
 }
