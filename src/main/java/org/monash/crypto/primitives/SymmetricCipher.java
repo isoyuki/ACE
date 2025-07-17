@@ -1,9 +1,0 @@
-package org.monash.crypto.primitives;
-
-import javax.crypto.NoSuchPaddingException;
-import java.security.NoSuchAlgorithmException;
-
-public interface SymmetricCipher {
-    byte[] encrypt(byte[] content, byte[] password);
-    byte[] decrypt(byte[] content, byte[] password);
-}
