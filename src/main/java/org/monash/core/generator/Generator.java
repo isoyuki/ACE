@@ -21,6 +21,8 @@ import org.monash.crypto.util.ByteArrayKey;
 import org.monash.crypto.util.PairingUtil;
 import org.monash.crypto.util.StringByteConverter;
 import org.monash.util.DataTypeConverter;
+import org.openjdk.jol.info.ClassLayout;
+import org.openjdk.jol.vm.VM;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import scala.Tuple2;
@@ -93,7 +95,7 @@ public class Generator {
         if(args.length > 1) {
 
             if(args[0].equals("update")){
-                update(args[1]);
+                update(args);
             } else if (args[0].equals("delete")) {
                 delete(args[1]);
             } else {
@@ -104,11 +106,31 @@ public class Generator {
         }
     }
 
-    public static void update(String file){
+    public static void update(String[] args){
+
+        String file = args[1];
+
+        // If arg[2] exists and is equal to "new", then delete the existing file keyword.txt
+        if(args.length > 2 && args[2].equals("new")){
+            File keywords_file = new File(properties.getProperty("keywords_file"));
+            if(keywords_file.exists()){
+                if(keywords_file.delete()){
+                    LOGGER.info("Deleted existing keywords file");
+                } else {
+                    LOGGER.error("Failed to delete existing keywords file");
+                };
+            }
+        } else{
+            updateW();
+        }
 
         // Redis is going to overwrite the existing data
         updateFSet();
         updateISet();
+
+
+        // Time the execution
+        long startTime = System.currentTimeMillis();
 
         // Generate inverted index
         JavaPairRDD<String, String> invertedIndex = sc.textFile(file)
@@ -140,6 +162,8 @@ public class Generator {
 
                 String keyword = entry._1;
                 String[] ids = entry._2.split(",");
+
+                System.out.println("Keyword: " + keyword + " has " + ids.length + " ids");
 
                 byte[] tag_w = hmac.encode(keyword.getBytes(), SecureParam.K_T);
                 byte[] k_w = cmac.encode(keyword.getBytes(), SecureParam.K_S);
@@ -213,6 +237,14 @@ public class Generator {
             });
         });
 
+        // Stop the timer
+        long endTime = System.currentTimeMillis();
+
+        // Print the execution time
+//        System.out.println("Execution time: " + (endTime - startTime) + "ms");
+        // In seconds
+        System.out.println("Execution time: " + (endTime - startTime) / 1000 + "s");
+
         DataSource redis = new RedisDataSource();
         // Redis supports Map<byte[], byte[]> hence FSet needs to be converted
         Map<byte[], byte[]> FSet_ByteMap = new HashMap<>();
@@ -263,12 +295,27 @@ public class Generator {
         byte[] tag_id = hmac.encode(id.getBytes(), SecureParam.K_2);
         byte[] r = cmac.encode(id.getBytes(), SecureParam.K_1);
 
+        System.out.println(VM.current().details());
+        System.out.println("tag_id info: " + ClassLayout.parseInstance(tag_id).toPrintable());
+        System.out.println("r info: " + ClassLayout.parseInstance(r).toPrintable());
+
         // Search in FSet for r
         DataSource redis = new RedisDataSource();
         byte[] delta = redis.hget("FSet".getBytes(), r);
 
+        if (delta == null) {
+            System.out.println("ID not found");
+            return;
+        }
+
         // Disassemble delta into ArrayList<byte[]>
         ArrayList<byte[]> deltaList = DataTypeConverter.ByteToArrayList(delta);
+
+
+        // Start the timer
+        long startTime = System.currentTimeMillis();
+
+        int delCount = 0;
 
         assert deltaList != null;
         for(byte[] delta_elements : deltaList){
@@ -285,8 +332,16 @@ public class Generator {
             // Delete the entry in ISet[l]
             if(l != null){
                 redis.hdel("ISet".getBytes(), l);
+                delCount++;
             }
         }
+
+        // Stop the timer
+        long endTime = System.currentTimeMillis();
+        // Print the execution time
+        System.out.println("Execution time: " + (endTime - startTime) + "ms");
+
+        System.out.println(delCount + " entries deleted");
 
         // Delete the entry in FSet[r]
 
@@ -312,6 +367,30 @@ public class Generator {
         // Get the current ISet
         Map<byte[], byte[]> ISet_redis = redis.hget_all("ISet".getBytes());
         ISet_redis.forEach(ISet::putIfAbsent);
+    }
+
+    public static void updateW(){
+
+        File keywords_file = new File(properties.getProperty("keywords_file"));
+
+        BufferedReader reader = null;
+        try{
+            reader = new BufferedReader(new FileReader(keywords_file));
+            String line;
+            while((line = reader.readLine()) != null){
+                String[] line_split = line.split(",");
+                W.put(line_split[0], new Tuple2<>(StringByteConverter.hexToByte(line_split[1]), Integer.parseInt(line_split[2])));
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            try {
+                assert reader != null;
+                reader.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
     }
 
     public static void printFSet(){
