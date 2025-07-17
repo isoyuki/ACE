@@ -1,15 +1,11 @@
 package org.monash.core.generator;
 
-import com.sun.tools.jconsole.JConsoleContext;
 import edu.monash.crypto.primitives.impl.mac.AESCMAC;
 import it.unisa.dia.gas.jpbc.Element;
 import it.unisa.dia.gas.jpbc.ElementPow;
-import it.unisa.dia.gas.jpbc.Field;
-import it.unisa.dia.gas.plaf.jpbc.field.z.ZrElement;
 import org.apache.log4j.Level;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;
-import org.apache.spark.api.java.JavaRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.broadcast.Broadcast;
 import org.monash.core.dao.DataSource;
@@ -22,7 +18,6 @@ import org.monash.crypto.primitives.impl.cipher.AESCBC;
 import org.monash.crypto.primitives.impl.cipher.RSA;
 import org.monash.crypto.primitives.impl.mac.HMACSHA;
 import org.monash.crypto.util.ByteArrayKey;
-import org.monash.crypto.util.ByteNumConverter;
 import org.monash.crypto.util.PairingUtil;
 import org.monash.crypto.util.StringByteConverter;
 import org.monash.util.DataTypeConverter;
@@ -30,11 +25,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import scala.Tuple2;
 
-import javax.xml.crypto.Data;
 import java.io.*;
-import java.math.BigInteger;
-import java.security.KeyPair;
-import java.security.NoSuchAlgorithmException;
 import java.util.*;
 
 public class Generator {
@@ -52,7 +43,18 @@ public class Generator {
     private static final Map<byte[], byte[]> ISet = new HashMap<>();
     private static final Map<String, Tuple2<byte[], Integer>> W = new HashMap<>(); // key is the keyword, value is the tuple of (ST_c,c)
 
+    private static final Properties properties = new Properties();
+
+    private static final String buildDir = "target/";
     public static void main(String[] args) {
+
+        // load properties
+        try{
+            properties.load(new FileInputStream(buildDir+ "config.properties"));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
 
         conf = new SparkConf().setAppName("Generator");
 
@@ -230,8 +232,34 @@ public class Generator {
             FSet_ByteMap.put(entry.getKey().getData(), DataTypeConverter.ArrayListToByte(entry.getValue()));
         }
 
-        redis.mset("FSet".getBytes(),FSet_ByteMap);
-        redis.mset("ISet".getBytes(), ISet);
+//        redis.hset("FSet".getBytes(),FSet_ByteMap);
+//        redis.hset("ISet".getBytes(), ISet);
+
+        redis.hsetnx("FSet".getBytes(),FSet_ByteMap);
+        redis.hsetnx("ISet".getBytes(), ISet);
+
+        // Save W to file
+
+        File keywords_file = new File(buildDir + properties.getProperty("keywords_file"));
+        BufferedWriter writer = null;
+
+        try{
+            writer = new BufferedWriter(new FileWriter(keywords_file));
+            new FileWriter(keywords_file, false).close();
+            for (Map.Entry<String, Tuple2<byte[], Integer>> entry : W.entrySet()) {
+                writer.write(entry.getKey() + "," + StringByteConverter.byteToHex(entry.getValue()._1) + "," + entry.getValue()._2);
+                writer.newLine();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            try {
+                assert writer != null;
+                writer.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
 
         // Print out the current FSet and ISet
         System.out.println("FSet: ");
@@ -295,16 +323,39 @@ public class Generator {
 
         // Disassemble FSet into HashMap<ByteArrayKey, ArrayList<byte[]>>
         FSet_redis.forEach((k, v) -> {
-            FSet.put(new ByteArrayKey(k), DataTypeConverter.ByteToArrayList(v));
+            FSet.putIfAbsent(new ByteArrayKey(k), DataTypeConverter.ByteToArrayList(v));
         });
     }
 
     public static void updateISet(){
 
         DataSource redis = new RedisDataSource();
-
         // Get the current ISet
         Map<byte[], byte[]> ISet_redis = redis.hget_all("ISet".getBytes());
-        ISet.putAll(ISet_redis);
+        ISet_redis.forEach(ISet::putIfAbsent);
+    }
+
+    public static void updateW(){
+
+            File keywords_file = new File(properties.getProperty("keywords_file"));
+            BufferedReader reader = null;
+
+            try{
+                reader = new BufferedReader(new FileReader(keywords_file));
+                String line;
+                while((line = reader.readLine()) != null){
+                    String[] line_split = line.split(",");
+                    W.put(line_split[0], new Tuple2<>(StringByteConverter.hexToByte(line_split[1]), Integer.parseInt(line_split[2])));
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            } finally {
+                try {
+                    assert reader != null;
+                    reader.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
     }
 }

@@ -59,9 +59,9 @@ public final class RedisDataSource implements DataSource {
     }
 
 
-    public void mset(byte[] key, Map<byte[], byte[]> valueMap) {
+    public void hset(byte[] key, Map<byte[], byte[]> valueMap) {
         try (Jedis jedis = pool.getResource()){
-            jedis.hmset(key, valueMap);
+            jedis.hset(key, valueMap);
         }
     }
 
@@ -70,6 +70,18 @@ public final class RedisDataSource implements DataSource {
         try (Jedis jedis = pool.getResource()){
             return jedis.hmget(key, field);
         }
+    }
+
+    public long hsetnx(byte[] key, Map<byte[], byte[]> valueMap) {
+        try (Jedis jedis = pool.getResource()) {
+
+            for (Map.Entry<byte[], byte[]> entry : valueMap.entrySet()) {
+                byte[] field = entry.getKey();
+                byte[] value = entry.getValue();
+                jedis.hsetnx(key, field, value);
+            }
+        }
+        return 0;
     }
 
     @Override

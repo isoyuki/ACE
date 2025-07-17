@@ -1,8 +1,5 @@
 package org.monash.core.dao;
 
-import org.monash.crypto.util.ByteArrayKey;
-
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -16,9 +13,11 @@ public interface DataSource {
     boolean insert(byte[] key, byte[]... value);
     void set(byte[] key, byte[] value);
     byte[] get(byte[] key);
-    void mset(byte[] key, Map<byte[], byte[]> valueMap);
+    void hset(byte[] key, Map<byte[], byte[]> valueMap);
 
     List<byte[]> mget(byte[] key, byte[]... field);
+
+    long hsetnx(byte[] key, Map<byte[], byte[]> valueMap);
 
     byte[] hget(byte[] key, byte[] field);
     Map<byte[], byte[]> hget_all(byte[] key);
