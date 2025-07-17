@@ -1,6 +1,6 @@
-package org.monash.core.dao;
+package org.ace.core.dao;
 
-import org.monash.crypto.util.ByteArrayKey;
+import org.ace.crypto.util.ByteArrayKey;
 
 import java.util.List;
 import java.util.Map;
@@ -18,8 +18,10 @@ public interface DataSource {
 
     boolean insert(String key, String... value);
     boolean insert(byte[] key, byte[]... value);
+
     void set(byte[] key, byte[] value);
     byte[] get(byte[] key);
+    
     void hset_map(byte[] key, Map<byte[], byte[]> valueMap);
     void hset(byte[] key, byte[] field, byte[] value);
     void hsetnx(byte[] key, byte[] field, byte[] value);

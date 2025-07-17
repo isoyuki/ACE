@@ -1,6 +1,6 @@
-package org.monash.core.generator;
+package org.ace.core.generator;
 
-import org.monash.crypto.primitives.impl.mac.AESCMAC;
+import org.ace.crypto.primitives.impl.mac.AESCMAC;
 import it.unisa.dia.gas.jpbc.Element;
 import it.unisa.dia.gas.jpbc.ElementPow;
 import org.apache.log4j.Level;
@@ -8,22 +8,21 @@ import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaPairRDD;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.broadcast.Broadcast;
-import org.monash.core.dao.DataSource;
-import org.monash.core.dao.impl.RedisDataSource;
-import org.monash.core.util.SecureParam;
-import org.monash.crypto.primitives.AsymmetricCipher;
-import org.monash.crypto.primitives.Hash;
-import org.monash.crypto.primitives.SymmetricCipher;
-import org.monash.crypto.primitives.impl.cipher.AESCBC;
-import org.monash.crypto.primitives.impl.cipher.RSA;
-import org.monash.crypto.primitives.impl.mac.HMACSHA;
-import org.monash.crypto.util.ByteArrayKey;
-import org.monash.crypto.util.PairingUtil;
-import org.monash.crypto.util.StringByteConverter;
-import org.monash.util.DataTypeConverter;
+import org.ace.core.dao.DataSource;
+import org.ace.core.dao.impl.RedisDataSource;
+import org.ace.core.util.SecureParam;
+import org.ace.crypto.primitives.AsymmetricCipher;
+import org.ace.crypto.primitives.Hash;
+import org.ace.crypto.primitives.SymmetricCipher;
+import org.ace.crypto.primitives.impl.cipher.AESCBC;
+import org.ace.crypto.primitives.impl.cipher.RSA;
+import org.ace.crypto.primitives.impl.mac.HMACSHA;
+import org.ace.crypto.util.ByteArrayKey;
+import org.ace.crypto.util.PairingUtil;
+import org.ace.crypto.util.StringByteConverter;
+import org.ace.util.DataTypeConverter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import scala.Array;
 import scala.Tuple2;
 
 import java.io.*;
@@ -37,18 +36,16 @@ public class Generator {
 
     static SparkConf conf;
     static JavaSparkContext sc;
-
     static Element g;
     static ElementPow preG;
     static Broadcast<ElementPow> broadcastPow;
 
-    private static final Map<String, ArrayList<byte[]>> FSet = new HashMap<>(); // rID1 | gST c 1 ·tagw1 /tagID1 , gSTc 2 ·tagw2 /tagID1
+    private static final Map<String, ArrayList<byte[]>> FSet = new HashMap<>();
     private static final Map<ByteArrayKey, byte[]> ISet = new HashMap<>();
-    private static final Map<String, Tuple2<byte[], Integer>> W = new HashMap<>(); // key is the keyword, value is the tuple of (ST_c,c)
-
+    private static final Map<String, Tuple2<byte[], Integer>> W = new HashMap<>();
     private static final Properties properties = new Properties();
-
     private static final String buildDir = "target/";
+
     public static void main(String[] args) {
 
         // load properties
@@ -84,11 +81,8 @@ public class Generator {
             PairingUtil.saveElement(g, "elliptical_g");
         }
 
-        // Create preprocessed element
         preG = g.getElementPowPreProcessing();
-        // Create broadcast variables
         broadcastPow = sc.broadcast(preG);
-
 
         // File path is passed as argument
         if(args.length > 1) {
@@ -104,12 +98,10 @@ public class Generator {
             LOGGER.error("Invalid argument");
         }
 
-        // New redis data source
         DataSource redis = new RedisDataSource();
-
-//        System.out.println("FSetsize: " + FSet_ByteMap.size());
         System.out.println("Redis FSet size: " + redis.hget_all("FSet".getBytes()).size());
         System.out.println("Redis ISet size: " + redis.hget_all("ISet".getBytes()).size());
+        redis.close();
 
     }
 
@@ -117,7 +109,6 @@ public class Generator {
 
         String file = args[1];
 
-        // If arg[2] exists and is equal to "new", then delete the existing file keyword.txt
         if(args.length > 2 && args[2].equals("new")){
             File keywords_file = new File(properties.getProperty("keywords_file"));
             if(keywords_file.exists()){
@@ -137,10 +128,7 @@ public class Generator {
         }
 
         // Redis is going to overwrite the existing data
-//        updateFSet();
-//        updateISet();
 
-        System.out.println("Start timer");
         long totalExecutionTime = System.currentTimeMillis();
 
         // Generate inverted index
@@ -161,7 +149,6 @@ public class Generator {
                 .reduceByKey((v1, v2) -> v1 + "," + v2).cache().repartition(16);
 
         LOGGER.debug("Inverted index is generated.");
-        System.out.println("Inverted index is generated.");
 
         Map<ByteArrayKey, byte[]> tag_ids = new HashMap<>();
 
@@ -179,7 +166,7 @@ public class Generator {
                 String keyword = entry._1;
                 String[] ids = entry._2.split(",");
 
-                System.out.println("Keyword: " + keyword + " has " + ids.length + " ids");
+                // System.out.println("Keyword: " + keyword + " has " + ids.length + " ids");
 
                 byte[] tag_w = hmac.encode(keyword.getBytes(), SecureParam.K_T);
                 byte[] k_w = cmac.encode(keyword.getBytes(), SecureParam.K_S);
@@ -195,9 +182,6 @@ public class Generator {
                     c = W.get(keyword)._2;
                 }
 
-                // Create FSets and ISets for each keyword
-                Map<String, byte[]> k_FSet = new HashMap<>();
-                Map<String, byte[]> k_ISet = new HashMap<>();
                 redis.initialiseMulti();
 
                 for (String id : ids) { // for IDi ∈ GDB(w) do
@@ -217,78 +201,42 @@ public class Generator {
 
                     byte[] enc_id  = aescbc.encrypt(id.getBytes(), k_w);
 
-
                     c++;
 
-//                    long ST_generation_time = System.nanoTime();
                     ST = rsa.decrypt(ST);
-//                    ST_generation_time = System.nanoTime() - ST_generation_time;
-//                    System.out.println("ST generation time: " + ST_generation_time);
 
-//                    long generator_time = System.nanoTime();
                     byte[] generator = broadcastPow.getValue()
                             .powZn(PairingUtil.getZrElementForHash(ST)
                                     .mul(PairingUtil.getZrElementForHash(tag_w)))
                             .getImmutable()
                             .toBytes();
 
-//                    generator_time = System.nanoTime() - generator_time;
-//                    System.out.println("Generator time: " + generator_time);
-
                     byte[] l = hmac.encode(generator, SecureParam.K_h);
-                    ByteArrayKey l_key = new ByteArrayKey(l);
 
-                    // Append enc_id to ISet[l]
-//                    if(!ISet.containsKey(l_key)) {
-//                        ISet.put(l_key, enc_id);
-////                        System.out.println(ISet.size());
-//                    }else{
-//                        System.out.println("There is already an entry for l");
-//                    }
-
-//                    redis.hsetnx("ISet".getBytes(), l, enc_id);
-
-//                    ISet.putIfAbsent(l_key, enc_id);
-//                    k_ISet.putIfAbsent(StringByteConverter.byteToHex(l), enc_id);
                     redis.hsetnx_transaction("ISet".getBytes(), l, enc_id);
 
-                    // delta = g ^ ( (ST-c * tag_w) / (tag_id))
-//                    long delta_time = System.nanoTime();
                     byte[] delta = broadcastPow.getValue()
                             .powZn(PairingUtil.getZrElementForHash(ST)
                                     .mul(PairingUtil.getZrElementForHash(tag_w))
                                     .div(PairingUtil.getZrElementForHash(tag_id)))
                             .getImmutable()
                             .toBytes();
-//                    delta_time = System.nanoTime() - delta_time;
-//                    System.out.println("Delta time: " + delta_time);
 
-                    // Append delta into FSet[r_ID]
-                    if(!FSet.containsKey(StringByteConverter.byteToHex(r))){
+                    byte[] FSet_value = redis.hget("FSet".getBytes(), r);
+                    if (FSet_value == null) {
                         ArrayList<byte[]> keywords = new ArrayList<>();
                         keywords.add(delta);
-                        FSet.put(StringByteConverter.byteToHex(r), keywords);
-                    }else{
-                        FSet.get(StringByteConverter.byteToHex(r)).add(delta);
+                        byte[] byte_arraylist = DataTypeConverter.ArrayListToByte(keywords);
+                        assert byte_arraylist != null;
+                        redis.hsetnx("FSet".getBytes(), r, byte_arraylist);
+                    } else {
+                        ArrayList<byte[]> keywords = DataTypeConverter.ByteToArrayList(FSet_value);
+                        assert keywords != null;
+                        keywords.add(delta);
+                        byte[] byte_arraylist = DataTypeConverter.ArrayListToByte(keywords);
+                        assert byte_arraylist != null;
+                        redis.hset("FSet".getBytes(), r, byte_arraylist);
                     }
-
-//                    byte[] FSet_value = redis.hget("FSet".getBytes(), r);
-//                    if (FSet_value == null) {
-//                        ArrayList<byte[]> keywords = new ArrayList<>();
-//                        keywords.add(delta);
-//                        byte[] byte_arraylist = DataTypeConverter.ArrayListToByte(keywords);
-//                        assert byte_arraylist != null;
-////                        redis.hsetnx("FSet".getBytes(), r, byte_arraylist);
-//                        k_FSet.put(r_id_key, byte_arraylist);
-//                    } else {
-//                        ArrayList<byte[]> keywords = DataTypeConverter.ByteToArrayList(FSet_value);
-//                        assert keywords != null;
-//                        keywords.add(delta);
-//                        byte[] byte_arraylist = DataTypeConverter.ArrayListToByte(keywords);
-//                        assert byte_arraylist != null;
-////                        redis.hset("FSet".getBytes(), r, byte_arraylist);
-//                        k_FSet.put(r_id_key, byte_arraylist);
-//                    }
                 }
 
                 // Update W
@@ -296,32 +244,12 @@ public class Generator {
                 W.put(keyword, new Tuple2<>(ST, c));
 
                 redis.executeMulti();
-
                 redis.close();
-
             });
         });
 
-
         long totalExecutionTimeEnd = System.currentTimeMillis();
         System.out.println("Execution time: " + (totalExecutionTimeEnd - totalExecutionTime) + "ms");
-
-        DataSource redis = new RedisDataSource();
-//        // Redis supports Map<byte[], byte[]> hence FSet needs to be converted
-        Map<byte[], byte[]> FSet_ByteMap = new HashMap<>();
-//        for (Map.Entry<ByteArrayKey, ArrayList<byte[]>> entry : FSet.entrySet()) {
-//            FSet_ByteMap.put(entry.getKey().getData(), DataTypeConverter.ArrayListToByte(entry.getValue()));
-//        }
-//
-        FSet.entrySet().parallelStream().forEach(entry -> {
-            FSet_ByteMap.put(entry.getKey().getBytes(), DataTypeConverter.ArrayListToByte(entry.getValue()));
-        });
-        redis.hsetnx_map("FSet".getBytes(),FSet_ByteMap);
-//        redis.hsetnx_ByteKey("ISet".getBytes(), ISet);
-
-        // Save W to file
-
-        redis.close();
 
         File keywords_file = new File(properties.getProperty("keywords_file"));
         BufferedWriter writer = null;
@@ -347,24 +275,19 @@ public class Generator {
 //        printFSet();
 //        printISet();
 
-//        redis.close();
     }
 
     public static void delete(String id){
+
+        long start = System.currentTimeMillis();
 
         // Compute tag id and r
         Hash cmac = new AESCMAC();
         Hash hmac = new HMACSHA();
 
-        long tag_id_gen_time = System.nanoTime();
         byte[] tag_id = hmac.encode(id.getBytes(), SecureParam.K_2);
-        long tag_id_gen_endTime = System.nanoTime();
-//        System.out.println("Tag id generation time: " + (tag_id_gen_endTime - tag_id_gen_time) + " ms");
 
-        long r_gen_time = System.nanoTime();
         byte[] r = cmac.encode(id.getBytes(), SecureParam.K_1);
-        long r_gen_endTime = System.nanoTime();
-//        System.out.println("r generation time: " + (r_gen_endTime - r_gen_time) + " ns");
 
         // Search in FSet for r
         DataSource redis = new RedisDataSource();
@@ -382,9 +305,6 @@ public class Generator {
         ArrayList<byte[]> deltaList = DataTypeConverter.ByteToArrayList(delta);
         assert deltaList != null;
         System.out.println("No. keywords associated with this ID: " + deltaList.size());
-
-        // Start the timer
-        long startTime = System.currentTimeMillis();
 
         deltaList.parallelStream().forEach(delta_elements ->{
             Element deltaElement = PairingUtil.getGTElementFromByte(delta_elements);
@@ -406,31 +326,22 @@ public class Generator {
         // Delete the entry in FSet[r]
         redis.hdel("FSet".getBytes(), r);
 
-        long endTime = System.currentTimeMillis();
-        // Print the execution time
-        System.out.println("Execution time: " + (endTime - startTime) + "ms");
-
         redis.close();
+
+        System.out.println("Execution Time: " + (System.currentTimeMillis() - start) + " ms");
+
     }
 
     public static void updateFSet(){
 
         DataSource redis = new RedisDataSource();
 
-        // Get the current FSet
         Map<byte[], byte[]> FSet_redis = redis.hget_all("FSet".getBytes());
 
 //        // Disassemble FSet into HashMap<ByteArrayKey, ArrayList<byte[]>>
         FSet_redis.forEach((k, v) -> {
             FSet.putIfAbsent(StringByteConverter.byteToHex(k), DataTypeConverter.ByteToArrayList(v));
         });
-
-        // Disassemble FSet into HashMap<ByteArrayKey, ArrayList<byte[]>>
-//        FSet_redis.entrySet().parallelStream().forEach((entry -> {
-//            byte[] k = entry.getKey();
-//            byte[] v = entry.getValue();
-//            FSet.putIfAbsent(new ByteArrayKey(k), DataTypeConverter.ByteToArrayList(v));
-//        }));
 
         redis.close();
     }
@@ -443,12 +354,6 @@ public class Generator {
         ISet_redis.forEach((k, v) -> {
             ISet.put(new ByteArrayKey(k), v);
         });
-
-//        ISet_redis.entrySet().parallelStream().forEach((entry -> {
-//            byte[] k = entry.getKey();
-//            byte[] v = entry.getValue();
-//            ISet.putIfAbsent(new ByteArrayKey(k), v);
-//        }));
 
         redis.close();
     }
@@ -502,6 +407,5 @@ public class Generator {
         });
 
         redis.close();
-
     }
 }

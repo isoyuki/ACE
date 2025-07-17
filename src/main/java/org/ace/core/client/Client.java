@@ -1,16 +1,16 @@
-package org.monash.core.client;
+package org.ace.core.client;
 
-import org.monash.crypto.primitives.impl.mac.AESCMAC;
+import org.ace.crypto.primitives.impl.mac.AESCMAC;
 import it.unisa.dia.gas.jpbc.Element;
 import it.unisa.dia.gas.jpbc.ElementPow;
-import org.monash.core.server.query.impl.Search;
-import org.monash.core.util.SecureParam;
-import org.monash.crypto.primitives.Hash;
-import org.monash.crypto.primitives.SymmetricCipher;
-import org.monash.crypto.primitives.impl.cipher.AESCBC;
-import org.monash.crypto.primitives.impl.mac.HMACSHA;
-import org.monash.crypto.util.PairingUtil;
-import org.monash.crypto.util.StringByteConverter;
+import org.ace.core.server.query.impl.Search;
+import org.ace.core.util.SecureParam;
+import org.ace.crypto.primitives.Hash;
+import org.ace.crypto.primitives.SymmetricCipher;
+import org.ace.crypto.primitives.impl.cipher.AESCBC;
+import org.ace.crypto.primitives.impl.mac.HMACSHA;
+import org.ace.crypto.util.PairingUtil;
+import org.ace.crypto.util.StringByteConverter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import scala.Tuple2;
@@ -30,7 +30,7 @@ public class Client {
     private final Hash hmac;
     private final ElementPow preG;
 
-    private static final Map<String, Tuple2<byte[], Integer>> W = new HashMap<>(); // key is the keyword, value is the tuple of (ST_c,c)
+    private static final Map<String, Tuple2<byte[], Integer>> W = new HashMap<>();
 
     private static final Properties properties = new Properties();
     private static final String buildDir = "target/";
@@ -73,17 +73,7 @@ public class Client {
     public ArrayList<String> retrieve(ArrayList<byte[]> enc_ids, byte[] K_w){
         SymmetricCipher aescbc = new AESCBC();
         ArrayList<String> IDSet = new ArrayList<>(enc_ids.size());
-//        enc_ids.forEach(id -> {
-//            byte[] dec_id = aescbc.decrypt(id, K_w);
-//            IDSet.add(new String(dec_id));
-//        });
 
-//        enc_ids.parallelStream().forEach(id -> {
-//            byte[] dec_id = aescbc.decrypt(id, K_w);
-//            IDSet.add(new String(dec_id));
-//        });
-
-        // Use map to parallelize
         enc_ids.parallelStream().map(id -> aescbc.decrypt(id, K_w)).forEach(dec_id -> IDSet.add(new String(dec_id)));
         return IDSet;
     }
@@ -95,62 +85,39 @@ public class Client {
 
         if (args.length > 0){
 
-            // Start timer
-            long startTime = System.currentTimeMillis();
-
             String keyword = args[0];
 
-            long startTime2 = System.nanoTime();
-            byte[] tag_w = client.hmac.encode(keyword.getBytes(), SecureParam.K_T);
-            long endTime2 = System.nanoTime();
-            System.out.println("tag_w time: " + (endTime2 - startTime2));
+            long start = System.currentTimeMillis();
 
-            startTime2 = System.nanoTime();
+            byte[] tag_w = client.hmac.encode(keyword.getBytes(), SecureParam.K_T);
+
             Element tk = client.preG
                     .powZn(PairingUtil.getZrElementForHash(tag_w))
                     .getImmutable();
-            endTime2 = System.nanoTime();
-            System.out.println("tk time: " + (endTime2 - startTime2));
 
             query.setTk(tk);
 
-            startTime2 = System.nanoTime();
             if (W.containsKey(keyword)) {
-                endTime2 = System.nanoTime();
-                System.out.println("W time: " + (endTime2 - startTime2));
-                startTime2 = System.nanoTime();
                 query.setST_c(W.get(keyword)._1);
-                endTime2 = System.nanoTime();
-                System.out.println("Search ST_c time: " + (endTime2 - startTime2));
-                startTime2 = System.nanoTime();
                 query.setC(W.get(keyword)._2);
-                endTime2 = System.nanoTime();
-                System.out.println("Search c time: " + (endTime2 - startTime2));
             }else{
                 return;
             }
 
             query.execute();
 
-//            System.out.println("Result size: " + query.getResultSize());
 
             byte[] K_w = client.cmac.encode(keyword.getBytes(), SecureParam.K_S);
 
-            // End timer
-            long endTime = System.currentTimeMillis();
-            System.out.println("Search time: " + (endTime - startTime) + "ms");
-
-            startTime2 = System.currentTimeMillis();
             ArrayList<String> decrypted = client.retrieve(query.getResultList(), K_w);
-            endTime2 = System.currentTimeMillis();
-            System.out.println("Decryption/Retrieve time: " + (endTime2 - startTime2) + "ms");
-
 
             System.out.println(query.getResultSize() + " IDs with keyword " + keyword + ": ");
             decrypted.forEach(id -> {
                 System.out.print("|" + id);
             });
             System.out.println();
+
+            System.out.println("Execution Time: " + (System.currentTimeMillis() - start) + " ms");
 
         }
 

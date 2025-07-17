@@ -1,31 +1,23 @@
-package org.monash.crypto.primitives.impl.mac;
+package org.ace.crypto.primitives.impl.mac;
 
 import org.bouncycastle.crypto.macs.HMac;
 import org.bouncycastle.crypto.params.KeyParameter;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
-import org.bouncycastle.jce.provider.JCEKeyGenerator;
-import org.monash.crypto.primitives.Hash;
+import org.ace.crypto.primitives.Hash;
 
-import javax.crypto.KeyGenerator;
-import javax.crypto.SecretKey;
-import javax.crypto.spec.SecretKeySpec;
 import java.security.SecureRandom;
 import java.security.Security;
 
 public class HMACSHA implements Hash {
 
     protected static final String ALGORITHM = "SHA512";
-//    static final HMac mac;
 
     static {
         Security.addProvider(new BouncyCastleProvider());
-//        mac = new HMac(new org.bouncycastle.crypto.digests.SHA512Digest());
     }
 
     public byte[] encode(byte[] content, byte[] password) {
         try{
-
-            long startTime = System.currentTimeMillis();
 
             SecureRandom random = SecureRandom.getInstance("SHA1PRNG");
             random.setSeed(password);
@@ -35,11 +27,6 @@ public class HMACSHA implements Hash {
             mac.update(content, 0, content.length);
             byte[] result = new byte[mac.getMacSize()];
             mac.doFinal(result, 0);
-
-            long endTime = System.currentTimeMillis();
-
-//            System.out.println("HMAC SHA Time: " + (endTime - startTime));
-
             return result;
         } catch (Exception e) {
             throw new RuntimeException(e);

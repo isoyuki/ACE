@@ -1,15 +1,12 @@
-package org.monash.crypto.primitives.impl.cipher;
+package org.ace.crypto.primitives.impl.cipher;
 
-import org.bouncycastle.crypto.AsymmetricBlockCipher;
 import org.bouncycastle.crypto.AsymmetricCipherKeyPair;
-import org.bouncycastle.crypto.InvalidCipherTextException;
 import org.bouncycastle.crypto.engines.RSAEngine;
 import org.bouncycastle.crypto.generators.RSAKeyPairGenerator;
-import org.bouncycastle.crypto.params.AsymmetricKeyParameter;
 import org.bouncycastle.crypto.params.RSAKeyGenerationParameters;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
-import org.monash.core.util.SecureParam;
-import org.monash.crypto.primitives.AsymmetricCipher;
+import org.ace.core.util.SecureParam;
+import org.ace.crypto.primitives.AsymmetricCipher;
 
 import javax.crypto.*;
 import java.math.BigInteger;
@@ -53,8 +50,6 @@ public class RSA implements AsymmetricCipher {
     public byte[] encrypt(byte[] content, byte[] password) {
         try{
 
-            long startTime = System.currentTimeMillis();
-
             KeyPairGenerator keyGen = KeyPairGenerator.getInstance(ALGORITHM);
             SecureRandom random = SecureRandom.getInstance("SHA1PRNG");
             random.setSeed(password);
@@ -65,12 +60,7 @@ public class RSA implements AsymmetricCipher {
 
             byte[] cipherText = cipher.doFinal(content);
 
-            long endTime = System.currentTimeMillis();
-
-            System.out.println("RSA encrypt time: " + (endTime - startTime) + " ns");
-
             return cipherText;
-//            return cipher.doFinal(content);
         } catch (BadPaddingException
                  | IllegalBlockSizeException
                  | InvalidKeyException
@@ -83,8 +73,6 @@ public class RSA implements AsymmetricCipher {
     public byte[] decrypt(byte[] content, byte[] password) {
         try{
 
-            long startTime = System.currentTimeMillis();
-
             KeyPairGenerator keyGen = KeyPairGenerator.getInstance(ALGORITHM);
             SecureRandom random = SecureRandom.getInstance("SHA1PRNG");
             random.setSeed(password);
@@ -95,13 +83,7 @@ public class RSA implements AsymmetricCipher {
 
             byte[] plainText = cipher.doFinal(content);
 
-            long endTime = System.currentTimeMillis();
-
-            System.out.println("RSA decryption time: " + (endTime - startTime));
-
             return plainText;
-
-//            return cipher.doFinal(content);
         } catch (BadPaddingException
                 | IllegalBlockSizeException
                 | InvalidKeyException
@@ -114,54 +96,22 @@ public class RSA implements AsymmetricCipher {
     @Override
     public byte[] encrypt(byte[] content) {
 
-        long startTime = System.currentTimeMillis();
-
-//            AsymmetricCipherKeyPair keyPair = GenerateKeys();
-//            Security.addProvider(new BouncyCastleProvider());
-
         RSAEngine engine = new RSAEngine();
         engine.init(true, keyPair.getPublic()); //true if encrypt
 
-        // Output encryption result as BigInteger
-
         byte[] cipherText = engine.processBlock(content, 0, content.length);
 
-        long endTime = System.currentTimeMillis();
-
-//        System.out.println("RSA encrypt time: " + (endTime - startTime));
-
         return cipherText;
-
-//            return engine.processBlock(content, 0, content.length);
-
     }
 
     @Override
     public byte[] decrypt(byte[] content) {
 
-        long startTime = System.currentTimeMillis();
-
-//            AsymmetricCipherKeyPair keyPair = GenerateKeys();
-        long endTime = System.currentTimeMillis();
-
-//            Security.addProvider(new BouncyCastleProvider());
-
-//            System.out.println("RSA generation time: " + (endTime - startTime));
-
-        startTime = System.currentTimeMillis();
-
         RSAEngine engine = new RSAEngine();
         engine.init(false, keyPair.getPrivate()); //true if encrypt
 
         byte[] plainText = engine.processBlock(content, 0, content.length);
-
-        endTime = System.currentTimeMillis();
-
-//        System.out.println("RSA decryption time: " + (endTime - startTime));
-
         return plainText;
-
-//            return engine.processBlock(content, 0, content.length);
 
     }
 

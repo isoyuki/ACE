@@ -1,27 +1,19 @@
-package org.monash.crypto.primitives.impl.cipher;
+package org.ace.crypto.primitives.impl.cipher;
 
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
-import org.monash.crypto.primitives.SymmetricCipher;
-import org.monash.crypto.util.StringByteConverter;
+import org.ace.crypto.primitives.SymmetricCipher;
+import org.ace.crypto.util.StringByteConverter;
 
 import javax.crypto.*;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
-import javax.sound.midi.SysexMessage;
 import java.security.*;
 
 
 public class AESCBC implements SymmetricCipher {
 
-//    static final KeyGenerator keyGenerator;
-
     static {
         Security.addProvider(new BouncyCastleProvider());
-//        try {
-//            keyGenerator = KeyGenerator.getInstance("AES");
-//        } catch (NoSuchAlgorithmException e) {
-//            throw new RuntimeException(e);
-//        }
     }
 
     private byte[] N = StringByteConverter.hexToByte("62EC67F9C3A4A407FCB2A8C49031A8B3");
@@ -33,13 +25,9 @@ public class AESCBC implements SymmetricCipher {
 //    @Override
     public byte[] encrypt(byte[] content, byte[] password) {
         try {
-
-            long startTime = System.currentTimeMillis();
-
-            KeyGenerator keyGenerator = KeyGenerator.getInstance("AES");
-
             SecureRandom random = SecureRandom.getInstance("SHA1PRNG");
             random.setSeed(password);
+            KeyGenerator keyGenerator = KeyGenerator.getInstance("AES");
             keyGenerator.init(128, random);
             SecretKey secretKey = keyGenerator.generateKey();
             byte[] enCodeFormat = secretKey.getEncoded();
@@ -47,10 +35,6 @@ public class AESCBC implements SymmetricCipher {
             Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5PADDING", "BC");
             cipher.init(Cipher.ENCRYPT_MODE, key, new IvParameterSpec(N));
             byte[] enc = cipher.doFinal(content);
-
-            long endTime = System.currentTimeMillis();
-
-//            System.out.println("AES CBC Encryption Time: " + (endTime - startTime));
 
             return enc;
 
@@ -69,10 +53,7 @@ public class AESCBC implements SymmetricCipher {
     public byte[] decrypt(byte[] content, byte[] password) {
         try {
 
-            long startTime = System.nanoTime();
-
             KeyGenerator keyGenerator = KeyGenerator.getInstance("AES");
-//            KeyGenerator keyGenerator = KeyGenerator.getInstance("AES");
 
             SecureRandom random = SecureRandom.getInstance("SHA1PRNG");
             random.setSeed(password);
@@ -84,10 +65,6 @@ public class AESCBC implements SymmetricCipher {
             cipher.init(Cipher.DECRYPT_MODE, key, new IvParameterSpec(N));
             byte[] dec = cipher.doFinal(content);
 
-            long endTime = System.nanoTime();
-
-//            return cipher.doFinal(content);
-//            System.out.println("AES CBC Decryption Time: " + (endTime - startTime));
             return dec;
         } catch (BadPaddingException
                  | IllegalBlockSizeException

@@ -1,26 +1,22 @@
-package org.monash.core.server.query.impl;
+package org.ace.core.server.query.impl;
 
 import it.unisa.dia.gas.jpbc.Element;
-import org.bouncycastle.crypto.params.RSAKeyGenerationParameters;
-import org.monash.core.dao.DataSource;
-import org.monash.core.dao.impl.RedisDataSource;
-import org.monash.core.server.query.Query;
-import org.monash.core.util.SecureParam;
-import org.monash.crypto.primitives.AsymmetricCipher;
-import org.monash.crypto.primitives.Hash;
-import org.monash.crypto.primitives.impl.cipher.RSA;
-import org.monash.crypto.primitives.impl.mac.HMACSHA;
-import org.monash.crypto.util.PairingUtil;
-import org.monash.crypto.util.StringByteConverter;
+import org.ace.core.dao.DataSource;
+import org.ace.core.dao.impl.RedisDataSource;
+import org.ace.core.server.query.Query;
+import org.ace.core.util.SecureParam;
+import org.ace.crypto.primitives.AsymmetricCipher;
+import org.ace.crypto.primitives.Hash;
+import org.ace.crypto.primitives.impl.cipher.RSA;
+import org.ace.crypto.primitives.impl.mac.HMACSHA;
+import org.ace.crypto.util.PairingUtil;
+import org.ace.crypto.util.StringByteConverter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import scala.Tuple2;
 
 import java.io.*;
-import java.math.BigInteger;
-import java.security.SecureRandom;
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
 
 public class Search implements Query {
 
@@ -56,48 +52,29 @@ public class Search implements Query {
             LOGGER.error("tk, ST_c, c are not defined");
         }else{
 
-            // For i = c to 1
-
             Hash hmac = new HMACSHA();
             AsymmetricCipher RSA = new RSA();
             DataSource redis = new RedisDataSource();
 
             for (int i = c; i > 0; i--) {
 
-                byte[] tk_ST = {};
-                long start = System.nanoTime();
-                tk_ST = tk.powZn(PairingUtil.getZrElementForHash(ST_c))
+                byte[] tk_ST = tk.powZn(PairingUtil.getZrElementForHash(ST_c))
                         .getImmutable()
                         .toBytes();
-                long end = System.nanoTime();
-                System.out.println("tk^st: " + (end - start));
 
-                start = System.nanoTime();
                 byte[] l = hmac.encode(tk_ST, SecureParam.K_h);
-                end = System.nanoTime();
-                System.out.println("l: " + (end - start));
-//
 
                 // Find in ISet
-                start = System.nanoTime();
                 byte[] enc_id = redis.hget("ISet".getBytes(), l);
-                end = System.nanoTime();
-                System.out.println("ISet: " + (end - start));
 
                 if (enc_id != null){
                     LOGGER.debug("Found in ISet: " + StringByteConverter.byteToHex(enc_id));
                     RSet.add(enc_id);
                 } else {
 //                    System.out.println("Not found in ISet: " + StringByteConverter.byteToHex(ST_c));
-//                    System.out.println(i);
                 }
 
-                start = System.nanoTime();
                 ST_c = RSA.encrypt(ST_c);
-                end = System.nanoTime();
-                System.out.println("ST_c: " + (end - start));
-//                long ST_RSA_time_end = System.currentTimeMillis();
-//                System.out.println("ST_RSA_time: " + (ST_RSA_time_end - ST_RSA_time) + " ms");
             }
 
             redis.close();

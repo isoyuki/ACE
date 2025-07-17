@@ -1,7 +1,7 @@
-package org.monash.crypto.primitives.impl.mac;
+package org.ace.crypto.primitives.impl.mac;
 
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
-import org.monash.crypto.primitives.Hash;
+import org.ace.crypto.primitives.Hash;
 
 import javax.crypto.KeyGenerator;
 import javax.crypto.Mac;
@@ -10,27 +10,16 @@ import java.security.*;
 
 public final class AESCMAC implements Hash {
 
-//    private static final Mac mac;
-//    private static final KeyGenerator keyGenerator;
-
     static {
-
         Security.addProvider(new BouncyCastleProvider());
-
     }
 
     public byte[] encode(byte[] content, byte[] password) {
         try {
-
-            long startTime = System.currentTimeMillis();
-
-            Mac mac = Mac.getInstance("AESCMAC", "BC");
-
-            KeyGenerator keyGenerator = KeyGenerator.getInstance("AES");
-            long endTime = System.currentTimeMillis();
-
             SecureRandom random = SecureRandom.getInstance("SHA1PRNG");
             random.setSeed(password);
+            Mac mac = Mac.getInstance("AESCMAC", "BC");
+            KeyGenerator keyGenerator = KeyGenerator.getInstance("AES");
             keyGenerator.init(128, random);
             SecretKey secretKey = keyGenerator.generateKey();
             mac.init(secretKey);
@@ -38,10 +27,7 @@ public final class AESCMAC implements Hash {
 
             byte[] result = mac.doFinal();
 
-//            System.out.println("AES CMAC Time: " + (endTime - startTime));
-
             return result;
-//            return mac.doFinal();
         } catch (InvalidKeyException | NoSuchAlgorithmException | NoSuchProviderException e) {
             throw new RuntimeException(e);
         }

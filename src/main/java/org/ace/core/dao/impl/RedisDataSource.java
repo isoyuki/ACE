@@ -1,9 +1,7 @@
-package org.monash.core.dao.impl;
+package org.ace.core.dao.impl;
 
-import org.monash.core.dao.DataSource;
-import org.monash.crypto.util.ByteArrayKey;
-import org.monash.crypto.util.StringByteConverter;
-import org.monash.util.DataTypeConverter;
+import org.ace.core.dao.DataSource;
+import org.ace.crypto.util.ByteArrayKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import redis.clients.jedis.Jedis;
@@ -11,11 +9,8 @@ import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
 import redis.clients.jedis.Transaction;
 
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 
 public final class RedisDataSource implements DataSource {
 
@@ -116,13 +111,11 @@ public final class RedisDataSource implements DataSource {
     public long hsetnx_map(byte[] key, Map<byte[], byte[]> valueMap) {
         try (Jedis jedis = pool.getResource()) {
 
-//            Transaction transaction = jedis.multi();
             for (Map.Entry<byte[], byte[]> entry : valueMap.entrySet()) {
                 byte[] field = entry.getKey();
                 byte[] value = entry.getValue();
                 jedis.hsetnx(key, field, value);
             }
-//            transaction.exec();
 
             return 1;
         }
